@@ -9,7 +9,7 @@ app.static_folder = 'static'
 
 COMPLETIONS_MODEL = "gpt-3.5-turbo"
 EMBEDDINGS_MODEL = "text-embedding-ada-002"
-openai.api_key = "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"
+openai.api_key = ""
 
 @app.route("/")
 def home():
