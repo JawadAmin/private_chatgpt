@@ -5,6 +5,10 @@ import pandas as pd
 import numpy as np
 from langchain import FewShotPromptTemplate
 from langchain import PromptTemplate
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import LLMChain
+from langchain.memory import ConversationBufferMemory
+
 
 app = Flask(__name__)
 app.static_folder = 'static'
@@ -93,21 +97,34 @@ def getResponse(query):
     user_prompt = f"""{few_shot_prompt_template.format(query=query, context=context)}"""
     system_prompt = f""""""
 
-    response = openai.ChatCompletion.create(
+
+    #response = openai.ChatCompletion.create(
+    #    temperature=0.5,
+    #    max_tokens=700,
+    #    top_p=1,
+    #    frequency_penalty=0,
+    #    presence_penalty=0,
+    #    model=COMPLETIONS_MODEL,
+    #    messages=[
+    #        {"role": "system", "content": system_prompt},
+    #        {"role": "user", "content": user_prompt}
+    #    ]
+    #)["choices"][0]["message"]
+    #
+    #result = response.content
+    #return result
+
+    llm = ChatOpenAI(
         temperature=0.5,
-        max_tokens=700,
-        top_p=1,
-        frequency_penalty=0,
-        presence_penalty=0,
-        model=COMPLETIONS_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-    )["choices"][0]["message"]
-    
-    result = response.content
-    return result
+        openai_api_key=openai.api_key,
+        model_name=COMPLETIONS_MODEL
+    )
+
+    memory = ConversationBufferMemory(memory_key="chat_history", input_key="query")
+
+    llm_chain = LLMChain(llm=llm, prompt=few_shot_prompt_template, memory=memory)
+
+    return llm_chain({"context": context, "query": query}, return_only_outputs=True)["text"]
 
 if __name__ == '__main__':
     app.run(debug=True)
