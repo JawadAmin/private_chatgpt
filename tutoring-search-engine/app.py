@@ -16,6 +16,7 @@ app.static_folder = 'static'
 COMPLETIONS_MODEL = "gpt-3.5-turbo"
 EMBEDDINGS_MODEL = "text-embedding-ada-002"
 openai.api_key = ""
+llm_chain = None
 
 @app.route("/")
 def home():
@@ -27,24 +28,13 @@ def get_bot_response():
     return chatbot_response(userText)
 
 def chatbot_response(msg):
-    res = getResponse(msg)
+    global llm_chain
+    if llm_chain is None:
+        llm_chain = initializeChain()
+    res = getResponse(msg, llm_chain)
     return res
 
-def getResponse(query):
-    question_vector = get_embedding(query, engine=EMBEDDINGS_MODEL)
-
-    clustered_text_df = pd.read_csv('clustered_embeddings.csv')
-    clustered_text_df['embedding'] = clustered_text_df['embedding'].apply(eval).apply(np.array)
-    clustered_text_df["similarities"] = clustered_text_df['embedding'].apply(lambda x: cosine_similarity(x, question_vector))
-    sorted_embeddings = clustered_text_df.sort_values("similarities", ascending=False).head(2)
-
-    context = []
-    for i, row in sorted_embeddings.iterrows():
-        context.append(row['aggregated_text'][:1300])  # limit the number of tokens per matched sequence to 1300 tokens
-
-    text = "\n".join(context)
-    context = text
-    
+def initializeChain():
     # create our examples
     examples = [
         {
@@ -52,7 +42,7 @@ def getResponse(query):
             "answer": "I can't complain but sometimes I still do."
         }, {
             "query": "What is the law of demand?",
-            "answer": "The law of demand is that the higher the price, the lower the quantity demanded, and the lower the price, the higher the quantity demanded. It's like the law of gravity, but for economics."
+            "answer": "The law of demand is that the higher the price, the lower the quantity demanded. It's like the law of gravity, but for economics."
         }
     ]
 
@@ -94,10 +84,37 @@ def getResponse(query):
         example_separator="\n\n"
     )
 
-    user_prompt = f"""{few_shot_prompt_template.format(query=query, context=context)}"""
-    system_prompt = f""""""
+    llm = ChatOpenAI(
+        temperature=0.5,
+        openai_api_key=openai.api_key,
+        model_name=COMPLETIONS_MODEL
+    )
 
+    memory = ConversationBufferMemory(memory_key="chat_history", input_key="query")
 
+    llm_chain = LLMChain(llm=llm, prompt=few_shot_prompt_template, memory=memory)
+
+    return llm_chain
+
+def getResponse(query, llm_chain):
+    question_vector = get_embedding(query, engine=EMBEDDINGS_MODEL)
+
+    clustered_text_df = pd.read_csv('clustered_embeddings.csv')
+    clustered_text_df['embedding'] = clustered_text_df['embedding'].apply(eval).apply(np.array)
+    clustered_text_df["similarities"] = clustered_text_df['embedding'].apply(lambda x: cosine_similarity(x, question_vector))
+    sorted_embeddings = clustered_text_df.sort_values("similarities", ascending=False).head(2)
+
+    context = []
+    for i, row in sorted_embeddings.iterrows():
+        context.append(row['aggregated_text'][:1300])  # limit the number of tokens per matched sequence to 1300 tokens
+
+    text = "\n".join(context)
+    context = text
+
+    return llm_chain({"context": context, "query": query}, return_only_outputs=True)["text"]
+
+    #user_prompt = f"""{few_shot_prompt_template.format(query=query, context=context)}"""
+    #system_prompt = f""""""
     #response = openai.ChatCompletion.create(
     #    temperature=0.5,
     #    max_tokens=700,
@@ -113,18 +130,6 @@ def getResponse(query):
     #
     #result = response.content
     #return result
-
-    llm = ChatOpenAI(
-        temperature=0.5,
-        openai_api_key=openai.api_key,
-        model_name=COMPLETIONS_MODEL
-    )
-
-    memory = ConversationBufferMemory(memory_key="chat_history", input_key="query")
-
-    llm_chain = LLMChain(llm=llm, prompt=few_shot_prompt_template, memory=memory)
-
-    return llm_chain({"context": context, "query": query}, return_only_outputs=True)["text"]
 
 if __name__ == '__main__':
     app.run(debug=True)
